@@ -1,10 +1,14 @@
-import numpy            as np 
-import pandas           as pd
-import streamlit        as st
+import numpy                as np 
+import pandas               as pd
+import streamlit            as st
+import matplotlib.pyplot    as plt
 
-from datetime           import datetime
-from PIL                import Image
-from io                 import BytesIO
+from datetime               import datetime
+from io                     import BytesIO
+from PIL                    import Image
+from sklearn.preprocessing  import StandardScaler
+from sklearn.cluster        import KMeans
+
 
 #Set tema do seaborn para melhorar o visual dos plots
 custom_params = {"axes.spines.right": False, "axes.spines.top": False}
@@ -118,18 +122,78 @@ def main():
         st.write(df_valor.head())
 
         st.write("## Tabela RFV Final")
-
         df_RF = df_recencia.merge(df_frequencia, on='ID_cliente')
         df_RFV = df_RF.merge(df_valor, on='ID_cliente')
         df_RFV.set_index('ID_cliente', inplace=True)
         st.write(df_RFV.head())
 
         st.write("## Segmentação de clientes utilizando o RFV")
+        st.write("Para realizar esta segmentação, podemos utilizar o modelo não supervisonado K-MEANS para agrupar os clientes onde as caracterisiticas se adequem conversem melhor. Abaixo esta a utilização de agrupamento utilizando K-MEANS")
 
+        # --- Padronizar variáveis RFV ---
+        scaler = StandardScaler()
+        df_scaled = scaler.fit_transform(df_RFV[["Recencia", "Frequencia", "Valor"]])
 
-        st.write("Um jeito de segmentar os clientes é criando quartis para cada componente do RFV, sendo que o melhor quartil é chamado de 'A', o segundo melhor quartil de 'B', o terceiro melhor de 'C' e o pior de 'D'. O melhor e o pior depende da componente. Po exemplo, quanto menor a recência melhor é o cliente (pois ele comprou com a gente tem pouco tempo) logo o menor quartil seria classificado como 'A', já pra componente frêquencia a lógica se inverte, ou seja, quanto maior a frêquencia do cliente comprar com a gente, melhor ele/a é, logo, o maior quartil recebe a letra 'A'.")
+        inertia = []
+        K = range(2, 10)
+        for k in K:
+            km = KMeans(n_clusters=k, random_state=3326)
+            km.fit(df_scaled)
+            inertia.append(km.inertia_)
+
+        st.write("### Método do Cotovelo (Inércia x K)")
+        fig, ax = plt.subplots()
+        fig.set_figwidth(25.5)
+        ax.plot(K, inertia, marker="o")
+        ax.set_xlabel("N° de Clusters (k)")
+        ax.set_ylabel("Inércia")
+        st.pyplot(fig)
+
+        # --- Aplciando o K-means com o número de clusters ideal ---
+
+        k = 5
+        kmeans = KMeans(n_clusters=k, random_state=3327)
+        df_RFV["Cluster"] = kmeans.fit_predict(df_scaled)
+
+        st.write("### Resumo dos clusters K-means")
+        st.write(df_RFV.groupby("Cluster")[['Recencia','Frequencia','Valor']].mean())
+
+        fig, ax = plt.subplots()
+        scatter = ax.scatter(
+            df_RFV['Recencia'],
+            df_RFV['Valor'],
+            c=df_RFV['Cluster'],  # cores por cluster
+            alpha=0.6
+        )
+
+        # Pega o colormap que o scatter usou
+        cmap = scatter.cmap
+        norm = scatter.norm
+
+        handles = []
+        labels = []
+
+        for cluster_label in sorted(df_RFV['Cluster'].unique()):
+            color = cmap(norm(cluster_label))  # cor exata do cluster
+            handles.append(
+                plt.Line2D([0], [0], marker='o', color='w',
+                        markerfacecolor=color, markersize=10)
+            )
+            labels.append(f"Cluster {cluster_label}")
+
+        ax.legend(handles, labels, title="Clusters")
+
+        fig.set_figwidth(25.5)
+        ax.set_xlabel("Recência")
+        ax.set_ylabel("Valor")
+        ax.set_title("Clusters K-means (Recência x Valor)")
+
+        st.pyplot(fig)
+
+        st.write("Podemos observar que o agrupamento nos resultou em 5 grupos até que bem segmentados, onde poderiamos utilizar como os melhores grupos de clientes, considerando Recência e Valor Gasto, os Clusters 2 e 4")
+
+        st.write("Outro jeito de segmentar os clientes é criando quartis para cada componente do RFV, sendo que o melhor quartil é chamado de 'A', o segundo melhor quartil de 'B', o terceiro melhor de 'C' e o pior de 'D'. O melhor e o pior depende da componente. Po exemplo, quanto menor a recência melhor é o cliente (pois ele comprou com a gente tem pouco tempo) logo o menor quartil seria classificado como 'A', já pra componente frêquencia a lógica se inverte, ou seja, quanto maior a frêquencia do cliente comprar com a gente, melhor ele/a é, logo, o maior quartil recebe a letra 'A'.")
         st.write("Se a gente tiver interessado em mais ou menos classes, basta a gente aumentar ou diminuir o número de quantils pra cada componente.")
-
 
         st.write("Quartis para o RFV")
 
